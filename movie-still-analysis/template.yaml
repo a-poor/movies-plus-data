@@ -22,7 +22,7 @@ Resources:
     Properties:
       BucketName: apoor-raw-movie-stills
       Tags:
-      - project: apoor-movies-plus-data
+      - project: movies-plus-data
 
   ImageMetadataBucket:
     Description: Bucket to store metadata about film stills in RawImageBucket and CleanImagesBucket
@@ -39,7 +39,7 @@ Resources:
     Properties:
       BucketName: apoor-clean-movie-images
       Tags:
-      - project: apoor-movies-plus-data
+      - project: movies-plus-data
 
 
   ### Lambda Functions ###
@@ -57,7 +57,7 @@ Resources:
           RAW_IMG_BUCKET: !Ref ImageMetadataBucket
           METADATA_BUCKET: !Ref ImageMetadataBucket
     Tags:
-      - project: apoor-movies-plus-data
+      - project: movies-plus-data
 
   # HelloWorldFunction:
   #   Type: AWS::Serverless::Function
