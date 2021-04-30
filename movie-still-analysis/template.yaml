@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  movie-still-analysis
+  # movie-still-analysis
 
   Sample SAM Template for movie-still-analysis
 
@@ -9,35 +9,71 @@ Globals:
   Function:
     Timeout: 3
     Handler: app.lambda_handler
-    Runtime: python:3.8
+    Runtime: python3.8
 
 Resources:
-  HelloWorldFunction:
+
+  ### S3 Buckets ###
+
+  RawImageBucket:
+    Description: Bucket to store raw images pulled from film-grab.com
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: apoor-raw-movie-stills
+      Tags:
+      - project: apoor-movies-plus-data
+
+  ImageMetadataBucket:
+    Description: Bucket to store metadata about film stills in RawImageBucket and CleanImagesBucket
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: apoor-movie-still-metadata
+      Tags:
+      - project: apoor-movies-plus-data
+
+  CleanImagesBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: apoor-clean-movie-images
+      Tags:
+      - project: apoor-movies-plus-data
+
+
+  ### Lambda Functions ###
+
+  ScrapeFilmGrabFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: lambda-functions/hello_world/
-      Events:
-        HelloWorld:
-          Type: Api
-          Properties:
-            Path: /hello
-            Method: get
+      MemorySize: 256 # 1000 # aka 1GB (max 10GB)
+      Timeout: 200 # seconds (max 900)
+      CodeUri: lambda-functions/scrape-film-stills/
+      Events: {}
+      Environment:
+        Variables: 
+          FG_START_URL: "https://film-grab.com/movies-a-z"
+          RAW_IMG_BUCKET: !Ref ImageMetadataBucket
+          METADATA_BUCKET: !Ref ImageMetadataBucket
+    Tags:
+      - project: apoor-movies-plus-data
 
-  HelloWorldFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: lambda-functions/hello_world/
-      Events:
-        HelloWorld:
-          Type: Api
-          Properties:
-            Path: /hello
-            Method: get
+  # HelloWorldFunction:
+  #   Type: AWS::Serverless::Function
+  #   Properties:
+  #     CodeUri: lambda-functions/hello_world/
+  #     Events:
+  #       HelloWorld:
+  #         Type: Api
+  #         Properties:
+  #           Path: /hello
+  #           Method: get
 
-Outputs:
-  HelloWorldApi:
-    Description: "API Gateway endpoint URL for Prod stage for Hello World function"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
+Outputs: []
+  # HelloWorldApi:
+  #   Description: "API Gateway endpoint URL for Prod stage for Hello World function"
+  #   Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
   # HelloWorldFunction:
   #   Description: "Hello World Lambda Function ARN"
   #   Value: !GetAtt HelloWorldFunction.Arn
