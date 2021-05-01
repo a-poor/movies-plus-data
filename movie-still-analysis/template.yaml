@@ -18,24 +18,26 @@ Resources:
   RawImageBucket:
     Description: Bucket to store raw images pulled from film-grab.com
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    # DeletionPolicy: Retain
     Properties:
       BucketName: apoor-raw-movie-stills
       Tags:
-      - project: movies-plus-data
+      - Key: project
+        Value: movies-plus-data
 
   ImageMetadataBucket:
     Description: Bucket to store metadata about film stills in RawImageBucket and CleanImagesBucket
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    # DeletionPolicy: Retain
     Properties:
       BucketName: apoor-movie-still-metadata
       Tags:
-      - project: apoor-movies-plus-data
+      - Key: project
+        Value: movies-plus-data
 
   CleanImagesBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    # DeletionPolicy: Retain
     Properties:
       BucketName: apoor-clean-movie-images
       Tags:
@@ -70,13 +72,13 @@ Resources:
   #           Path: /hello
   #           Method: get
 
-Outputs: []
+Outputs: 
   # HelloWorldApi:
   #   Description: "API Gateway endpoint URL for Prod stage for Hello World function"
   #   Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
-  # HelloWorldFunction:
-  #   Description: "Hello World Lambda Function ARN"
-  #   Value: !GetAtt HelloWorldFunction.Arn
-  # HelloWorldFunctionIamRole:
-  #   Description: "Implicit IAM Role created for Hello World function"
-  #   Value: !GetAtt HelloWorldFunctionRole.Arn
+  ScrapeFilmGrabFunction:
+    Description: "Hello World Lambda Function ARN"
+    Value: !GetAtt ScrapeFilmGrabFunction.Arn
+  ScrapeFilmGrabFunctionIamRole:
+    Description: "Implicit IAM Role created for Hello World function"
+    Value: !GetAtt ScrapeFilmGrabFunction.Arn
