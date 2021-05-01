@@ -78,7 +78,7 @@ def get_file_extension(content_type: str) -> str:
     return "." + content_type.split("/")[-1]
 
 
-def upload_image(s3: 'botocore.client.S3', bucket_name: str, filename: str, 
+def upload_image(bucket_name: str, filename: str, 
     image_data: bytes):
     """Uploads an image to an S3 bucket.
 
@@ -91,6 +91,7 @@ def upload_image(s3: 'botocore.client.S3', bucket_name: str, filename: str,
         (also temporarily used locally)
     :param image_data: The bytes object with the image's data
     """
+    s3 = boto3.client("s3")
     # Save the file locally
     tmp_dir = Path("/tmp")
     img_file = tmp_dir / filename
@@ -105,10 +106,11 @@ def upload_image(s3: 'botocore.client.S3', bucket_name: str, filename: str,
     img_file.unlink()
 
 
-def upload_metadata(s3: 'botocore.client.S3', bucket_name: str, filename: str, 
+def upload_metadata(bucket_name: str, filename: str, 
     data: list):
     """
     """
+    s3 = boto3.client("s3")
     # Store the data locally
     tmp_file = Path("./metadata.json")
     tmp_file.write_text(json.dumps(data))
@@ -125,11 +127,11 @@ def get_file_id(film_data: dict) -> str:
 
 
 @ray.remote
-def parse_image(s3, IMAGE_BUCKET, image_data: dict):
+def parse_image(IMAGE_BUCKET, image_data: dict):
     img_file, content_type = download_image(image_data["img-url"])
     file_ext = get_file_extension(content_type)
-    filename = image_data["filename"] + "." + file_ext
-    upload_image(s3, IMAGE_BUCKET, filename, img_file)
+    filename = image_data["filename"] + file_ext
+    upload_image(IMAGE_BUCKET, filename, img_file)
     return filename
 
 
@@ -139,10 +141,6 @@ def run():
     START_URL = "https://film-grab.com/movies-a-z"
     IMAGE_BUCKET = "apoor-raw-movie-stills"
     METADATA_BUCKET = "apoor-movie-still-metadata"
-
-    # Connect to S3
-    print("Connecting to s3...")
-    s3 = boto3.client("s3")
 
     # Scrape the Film Page URLs
     print("Getting initial data list...")
@@ -164,7 +162,7 @@ def run():
     fg_data = [{**d, "filename": get_file_id(d)} for d in fg_data]
 
     print("Downloading images...")
-    futures = [parse_image.remote(s3,IMAGE_BUCKET,filename,d) 
+    futures = [parse_image.remote(IMAGE_BUCKET,d) 
         for d in fg_data]
     filenames = ray.get(futures)
     print("Done.")
@@ -173,36 +171,9 @@ def run():
 
     # Update filenames using returned values
     print("Updating filenames...")
-    fg_data = [{**d,"filename": f} for d, f in zip(fg_data,filenames)]
+    fg_data = [{**d, "filename": f} for d, f in zip(fg_data,filenames)]
 
     # Upload the metadata file
-    upload_metadata(s3, METADATA_BUCKET, METADATA_FILENAME, fg_data)
-
-
-    ##############################################################
-
-    # # For each movie, get the image URLs
-    # for i, film in enumerate(fg_data):
-    #     # Scrape the list of images on the film's page
-    #     img_urls = get_movie_img_urls(film["film-url"])
-    #     fg_data[i]["images"] = [{"url": url} for url in img_urls]
-
-    #     jlen = len(str(len(img_urls)))
-
-    #     # For each image... upload it to S3 and store the filename
-    #     for j, url in enumerate(img_urls):
-    #         # Download it...
-    #         img_data, content_type = download_image(url)
-
-    #         # Set the filename
-    #         filename = f"{i:0{ilen}d}.{j:0{jlen}d}" + get_file_extension(content_type)
-    #         fg_data[i]["images"][j]["filename"] = filename
-
-    #         # Upload it to S3
-    #         upload_image(s3, IMAGE_BUCKET, filename, img_data)
-    
-    # # Store the metadata in a bucket
-    # upload_metadata(s3, METADATA_BUCKET, METADATA_FILENAME, fg_data)
-
+    upload_metadata(METADATA_BUCKET, METADATA_FILENAME, fg_data)
 
 if __name__ == '__main__': run()
