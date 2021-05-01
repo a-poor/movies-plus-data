@@ -1,11 +1,19 @@
 import os
 import json
+import itertools as it
 from pathlib import Path
 from typing import List, Dict
+from datetime import datetime
+
+from concurrent.futures import ThreadPoolExecutor
+# import ray
 
 import boto3
 import requests
 from bs4 import BeautifulSoup
+
+
+# ray.init()
 
 
 def get_initial_list(url: str) -> List[Dict[str,str]]:
@@ -27,26 +35,24 @@ def get_initial_list(url: str) -> List[Dict[str,str]]:
     ).find_all("li")
     # Return a dict with the movie title and url
     return [
-        {"title": a.text, "url": a.attrs.get("href")} 
-        for a in [li.find("a") for li in arr]
+        {"film-id": i, "title": a.text, "film-url": a.attrs.get("href")} 
+        for i, a in enumerate([li.find("a") for li in arr])
     ]
 
 
-def get_movie_img_urls(url: str) -> List[str]:
+def get_movie_img_urls(film_data: dict) -> List[dict]:
     """Returns a list of film-still image urls from a 
     specific film's page on film-grab.
 
     :param url: URL for specific film's page on film-grab
-    :returns: List of film-still image URLs on that page
+    :returns: List of film-still image dicts on that page
     """
-    # Make page-soup from page URL
+    url = film_data["film-url"]
     resp = requests.get(url)
     soup = BeautifulSoup(resp.content,"lxml")
-    # Return the src attributes from each 
-    # <img> tag in a <div> tag with class `bwg-item`
     return [
-        div.find("img").attrs.get("src") for div in
-        soup.find_all("div", attrs={"class": "bwg-item"})
+        {**film_data, "img-id": i, "img-url": div.find("img").attrs.get("src")} 
+        for i, div in enumerate(soup.find_all("div", attrs={"class": "bwg-item"}))
     ]
 
 
@@ -105,56 +111,109 @@ def upload_metadata(s3: 'botocore.client.S3', bucket_name: str, filename: str,
     """
     """
     # Store the data locally
-    tmp_file = Path("/tmp") / "metadata.json"
+    tmp_file = Path("./metadata.json")
     tmp_file.write_text(json.dumps(data))
     # Upload it to S3
     s3.upload_file(
-        str(img_file),
+        str(tmp_file),
         bucket_name,
         filename
     )
-    # Delete it locally
-    tmp_file.unlink()
+
+
+def get_filename(film_data: dict) -> str:
+    return str(film_data["film-id"]) + "." + str(film_data["img-id"])+".jpeg"
+
+
+def parse_image(s3, IMAGE_BUCKET, image_data: dict):
+    img_file, content_type = download_image(image_data["img-url"])
+    # image_data["filename"] += get_file_extension(content_type)
+    filename = image_data["filename"]
+    upload_image(s3, IMAGE_BUCKET, filename, img_file)
+    return content_type
 
 
 def run():
     """
     """
     # Get config settings from env vars
-    START_URL = os.environ["FG_START_URL"]
-    IMAGE_BUCKET = os.environ["RAW_IMG_BUCKET"]
-    METADATA_BUCKET = os.environ["METADATA_BUCKET"]
+    # START_URL = os.environ["FG_START_URL"]
+    # IMAGE_BUCKET = os.environ["RAW_IMG_BUCKET"]
+    # METADATA_BUCKET = os.environ["METADATA_BUCKET"]
+
+    START_URL = "https://film-grab.com/movies-a-z"
+    IMAGE_BUCKET = "apoor-raw-movie-stills"
+    METADATA_BUCKET = "apoor-movie-still-metadata"
 
     METADATA_FILENAME = "fg-scrape-metadata.json"
 
     # Connect to S3
+    print("Connecting to s3...")
     s3 = boto3.client("s3")
 
     # Scrape the Film Page URLs
+    print("Getting initial data list...")
     fg_data = get_initial_list(START_URL)
 
-    ilen = len(str(len(fg_data)))
+    # Get img URLs from each individual sites
+    print("Getting image urls...")
+    start_time = datetime.now()
+    with ThreadPoolExecutor() as P:
+        fg_data = list(it.chain(*P.map(
+            get_movie_img_urls, fg_data
+        )))
+    # list_of_lists = [get_movie_img_urls.remote(d) for d in fg_data]
 
-    # For each movie, get the image URLs
-    for i, film in enumerate(fg_data):
-        # Scrape the list of images on the film's page
-        img_urls = get_movie_img_urls(film["url"])
-        fg_data[i]["images"] = [{"url": url} for url in img_urls]
+    # Flatten the list-of-lists
 
-        jlen = len(str(len(img_urls)))
+    # ...
 
-        # For each image... upload it to S3 and store the filename
-        for j, url in enumerate(img_urls):
-            # Download it...
-            img_data, content_type = download_image(url)
+    print("Done.")
+    print("Time to complete:", datetime.now() - start_time)
+    print()
 
-            # Set the filename
-            filename = f"{i:0{ilen}d}.{j:0{jlen}d}" + get_file_extension(content_type)
-            fg_data[i]["images"][j]["filename"] = filename
+    # Get the filenames
+    fg_data = [{**d, "filename": get_filename(d)} for d in fg_data]
 
-            # Upload it to S3
-            upload_image(s3, IMAGE_BUCKET, filename, img_data)
-    
-    # Store the metadata in a bucket
+    # print("Downloading images...")
+    # print("Getting image urls...")
+    # with ThreadPoolExecutor() as P:
+    #     filenames = list(P.map(
+    #         lambda d: parse_image(s3, IMAGE_BUCKET, filename, d),
+    #         fg_data
+    #     )) # Will this return types in order?
+    # print("Done.")
+    # print("Time to complete:", datetime.now() - start_time)
+    # print()
+
+
     upload_metadata(s3, METADATA_BUCKET, METADATA_FILENAME, fg_data)
-    return
+
+
+    ##############################################################
+
+    # # For each movie, get the image URLs
+    # for i, film in enumerate(fg_data):
+    #     # Scrape the list of images on the film's page
+    #     img_urls = get_movie_img_urls(film["film-url"])
+    #     fg_data[i]["images"] = [{"url": url} for url in img_urls]
+
+    #     jlen = len(str(len(img_urls)))
+
+    #     # For each image... upload it to S3 and store the filename
+    #     for j, url in enumerate(img_urls):
+    #         # Download it...
+    #         img_data, content_type = download_image(url)
+
+    #         # Set the filename
+    #         filename = f"{i:0{ilen}d}.{j:0{jlen}d}" + get_file_extension(content_type)
+    #         fg_data[i]["images"][j]["filename"] = filename
+
+    #         # Upload it to S3
+    #         upload_image(s3, IMAGE_BUCKET, filename, img_data)
+    
+    # # Store the metadata in a bucket
+    # upload_metadata(s3, METADATA_BUCKET, METADATA_FILENAME, fg_data)
+
+
+if __name__ == '__main__': run()
