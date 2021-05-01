@@ -5,15 +5,14 @@ from pathlib import Path
 from typing import List, Dict
 from datetime import datetime
 
-from concurrent.futures import ThreadPoolExecutor
-# import ray
+import ray
 
 import boto3
 import requests
 from bs4 import BeautifulSoup
 
 
-# ray.init()
+ray.init()
 
 
 def get_initial_list(url: str) -> List[Dict[str,str]]:
@@ -39,7 +38,7 @@ def get_initial_list(url: str) -> List[Dict[str,str]]:
         for i, a in enumerate([li.find("a") for li in arr])
     ]
 
-
+@ray.remote
 def get_movie_img_urls(film_data: dict) -> List[dict]:
     """Returns a list of film-still image urls from a 
     specific film's page on film-grab.
@@ -121,31 +120,25 @@ def upload_metadata(s3: 'botocore.client.S3', bucket_name: str, filename: str,
     )
 
 
-def get_filename(film_data: dict) -> str:
-    return str(film_data["film-id"]) + "." + str(film_data["img-id"])+".jpeg"
+def get_file_id(film_data: dict) -> str:
+    return str(film_data["film-id"]) + "." + str(film_data["img-id"])
 
 
+@ray.remote
 def parse_image(s3, IMAGE_BUCKET, image_data: dict):
     img_file, content_type = download_image(image_data["img-url"])
-    # image_data["filename"] += get_file_extension(content_type)
-    filename = image_data["filename"]
+    file_ext = get_file_extension(content_type)
+    filename = image_data["filename"] + "." + file_ext
     upload_image(s3, IMAGE_BUCKET, filename, img_file)
-    return content_type
+    return filename
 
 
 def run():
-    """
-    """
-    # Get config settings from env vars
-    # START_URL = os.environ["FG_START_URL"]
-    # IMAGE_BUCKET = os.environ["RAW_IMG_BUCKET"]
-    # METADATA_BUCKET = os.environ["METADATA_BUCKET"]
-
+    """ """
+    # Set config consts
     START_URL = "https://film-grab.com/movies-a-z"
     IMAGE_BUCKET = "apoor-raw-movie-stills"
     METADATA_BUCKET = "apoor-movie-still-metadata"
-
-    METADATA_FILENAME = "fg-scrape-metadata.json"
 
     # Connect to S3
     print("Connecting to s3...")
@@ -158,35 +151,31 @@ def run():
     # Get img URLs from each individual sites
     print("Getting image urls...")
     start_time = datetime.now()
-    with ThreadPoolExecutor() as P:
-        fg_data = list(it.chain(*P.map(
-            get_movie_img_urls, fg_data
-        )))
-    # list_of_lists = [get_movie_img_urls.remote(d) for d in fg_data]
-
-    # Flatten the list-of-lists
-
-    # ...
-
+    futures = [get_movie_img_urls.remote(d) for d in fg_data]
+    list_of_lists = ray.get(futures)
     print("Done.")
     print("Time to complete:", datetime.now() - start_time)
     print()
 
+    # Flatten the list-of-lists
+    fg_data = list(it.chain(*list_of_lists))
+
     # Get the filenames
-    fg_data = [{**d, "filename": get_filename(d)} for d in fg_data]
+    fg_data = [{**d, "filename": get_file_id(d)} for d in fg_data]
 
-    # print("Downloading images...")
-    # print("Getting image urls...")
-    # with ThreadPoolExecutor() as P:
-    #     filenames = list(P.map(
-    #         lambda d: parse_image(s3, IMAGE_BUCKET, filename, d),
-    #         fg_data
-    #     )) # Will this return types in order?
-    # print("Done.")
-    # print("Time to complete:", datetime.now() - start_time)
-    # print()
+    print("Downloading images...")
+    futures = [parse_image.remote(s3,IMAGE_BUCKET,filename,d) 
+        for d in fg_data]
+    filenames = ray.get(futures)
+    print("Done.")
+    print("Time to complete:", datetime.now() - start_time)
+    print()
 
+    # Update filenames using returned values
+    print("Updating filenames...")
+    fg_data = [{**d,"filename": f} for d, f in zip(fg_data,filenames)]
 
+    # Upload the metadata file
     upload_metadata(s3, METADATA_BUCKET, METADATA_FILENAME, fg_data)
 
 
