@@ -190,6 +190,8 @@ print()
 # print("Time to complete:", datetime.now() - start_time)
 # print()
 
+METADATA_FILENAME = "fg-metadata.json"
+
 # Upload the metadata file
 print("Uploading metadata...")
 upload_metadata(METADATA_BUCKET, METADATA_FILENAME, fg_data)
