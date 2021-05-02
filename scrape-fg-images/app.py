@@ -161,6 +161,9 @@ def run():
     # Get the filenames
     fg_data = [{**d, "filename": get_file_id(d)} for d in fg_data]
 
+    print(f"Found {len(fg_data)} images.")
+    print()
+
     print("Downloading images...")
     futures = [parse_image.remote(IMAGE_BUCKET,d) 
         for d in fg_data]
