@@ -75,6 +75,7 @@ def get_file_extension(content_type: str) -> str:
     :param content_type: The image's content-type from the web
     :returns: The extension of the image
     """
+    if content_type is None: return ""
     return "." + content_type.split("/")[-1]
 
 
@@ -127,6 +128,13 @@ def get_file_id(film_data: dict) -> str:
 
 
 @ray.remote
+def get_img_file_ct(url: str) -> str:
+    resp = requests.head(url)
+    try: return resp.headers.get("Content-Type")
+    except: return None
+
+
+@ray.remote
 def parse_image(IMAGE_BUCKET, image_data: dict):
     img_file, content_type = download_image(image_data["img-url"])
     file_ext = get_file_extension(content_type)
@@ -135,48 +143,55 @@ def parse_image(IMAGE_BUCKET, image_data: dict):
     return filename
 
 
-def run():
-    """ """
-    # Set config consts
-    START_URL = "https://film-grab.com/movies-a-z"
-    IMAGE_BUCKET = "apoor-raw-movie-stills"
-    METADATA_BUCKET = "apoor-movie-still-metadata"
+# Set config consts
+START_URL = "https://film-grab.com/movies-a-z"
+IMAGE_BUCKET = "apoor-raw-movie-stills"
+METADATA_BUCKET = "apoor-movie-still-metadata"
 
-    # Scrape the Film Page URLs
-    print("Getting initial data list...")
-    fg_data = get_initial_list(START_URL)
+# Scrape the Film Page URLs
+print("Getting initial data list...")
+fg_data = get_initial_list(START_URL)
 
-    # Get img URLs from each individual sites
-    print("Getting image urls...")
-    start_time = datetime.now()
-    futures = [get_movie_img_urls.remote(d) for d in fg_data]
-    list_of_lists = ray.get(futures)
-    print("Done.")
-    print("Time to complete:", datetime.now() - start_time)
-    print()
+# Get img URLs from each individual sites
+print("Getting image urls...")
+start_time = datetime.now()
+futures = [get_movie_img_urls.remote(d) for d in fg_data]
+list_of_lists = ray.get(futures)
+print("Done.")
+print("Time to complete:", datetime.now() - start_time)
+print()
 
-    # Flatten the list-of-lists
-    fg_data = list(it.chain(*list_of_lists))
+# Flatten the list-of-lists
+fg_data = list(it.chain(*list_of_lists))
 
-    # Get the filenames
-    fg_data = [{**d, "filename": get_file_id(d)} for d in fg_data]
+# Get the filenames
+fg_data = [{**d, "filename": get_file_id(d)} for d in fg_data]
 
-    print(f"Found {len(fg_data)} images.")
-    print()
+print(f"Found {len(fg_data)} images.")
+print()
 
-    print("Downloading images...")
-    futures = [parse_image.remote(IMAGE_BUCKET,d) 
-        for d in fg_data]
-    filenames = ray.get(futures)
-    print("Done.")
-    print("Time to complete:", datetime.now() - start_time)
-    print()
+print("Checking image content types...")
+futures = [get_img_file_ct.remote(d["img-url"]) 
+    for d in fg_data]
+content_types = ray.get(futures)
+print("Done.")
+print("Time to complete:", datetime.now() - start_time)
+print()
 
-    # Update filenames using returned values
-    print("Updating filenames...")
-    fg_data = [{**d, "filename": f} for d, f in zip(fg_data,filenames)]
+print("Updating filenames...")
+fg_data = [{**d, "filename": f"{d['filename']}{c}"} for d, c in zip(fg_data, content_types)]
+print()
 
-    # Upload the metadata file
-    upload_metadata(METADATA_BUCKET, METADATA_FILENAME, fg_data)
+# print("Downloading images...")
+# futures = [parse_image.remote(IMAGE_BUCKET,d) 
+#     for d in fg_data]
+# filenames = ray.get(futures)
+# print("Done.")
+# print("Time to complete:", datetime.now() - start_time)
+# print()
 
-if __name__ == '__main__': run()
+# Upload the metadata file
+print("Uploading metadata...")
+upload_metadata(METADATA_BUCKET, METADATA_FILENAME, fg_data)
+print("Done.")
+
