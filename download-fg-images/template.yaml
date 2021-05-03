@@ -1,0 +1,27 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: download-fg-images
+
+Resources:
+  DownloadImagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: function/
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 300
+      MemorySize: 1024
+      Policies:
+      - S3FullAccessPolicy:
+          BucketName: "apoor-raw-movie-stills"
+      Events:
+        PostImageDownload:
+          Type: Api
+          Properties:
+            Path: /
+            Method: post
+
+Outputs:
+  HelloWorldApi:
+    Description: "API Gateway endpoint URL for Prod stage for Hello World function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"

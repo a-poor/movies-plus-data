@@ -179,7 +179,8 @@ print("Time to complete:", datetime.now() - start_time)
 print()
 
 print("Updating filenames...")
-fg_data = [{**d, "filename": f"{d['filename']}{c}"} for d, c in zip(fg_data, content_types)]
+fg_data = [{**d, "filename": f"{d['filename']}{get_file_extension(c)}"} 
+    for d, c in zip(fg_data, content_types)]
 print()
 
 # print("Downloading images...")
