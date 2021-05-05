@@ -41,11 +41,6 @@ def lambda_handler(event, context):
 
     params = json.loads(event["body"])
     req_params = {"img-url","bucket","filename"}
-
-    # return {
-    #     "statusCode": 200,
-    #     "body": json.dumps(event)
-    # }
     
     # Check for correct params
     for p in req_params:
