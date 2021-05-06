@@ -4,3 +4,9 @@
 __pycache__
 *.json
 
+tmp
+*.jpg
+*.jpeg
+*.png
+*.parquet
+
